@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tennis for Two</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+  :root {
+    --bg: #0b0b12;
+    --cyan: #00f0ff;
+    --pink: #ff2e63;
+    --green: #00ff2f;
+    --grid: 37px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Press Start 2P', monospace;
+    overflow: hidden;
+  }
+
+  .frame {
+    position: relative;
+    width: min(94vw, 402px);
+    aspect-ratio: 402 / 874;
+    background:
+      linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / var(--grid) var(--grid),
+      linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / var(--grid) var(--grid),
+      var(--bg);
+    border: 1px solid #1a1a24;
+    overflow: hidden;
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    z-index: 1;
+  }
+
+  .footer-note {
+    position: absolute;
+    left: 50%;
+    top: 91.5%;
+    transform: translateX(-50%);
+    font-size: clamp(8px, 2vw, 10px);
+    color: #ffffff;
+    letter-spacing: 0px;
+    z-index: 2;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .hud {
+    position: absolute;
+    left: 50%;
+    top: 45.8%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .hud .label,
+  .hud .value {
+    font-size: clamp(20px, 5.6vw, 26px);
+    color: var(--cyan);
+    opacity: 0.5;
+    text-align: center;
+    line-height: 1;
+  }
+
+  .game-over-label {
+    position: absolute;
+    left: 50%;
+    top: 39%;
+    transform: translateX(-50%);
+    font-size: clamp(18px, 5.2vw, 22px);
+    padding: 8px;
+    z-index: 2;
+    pointer-events: none;
+    white-space: nowrap;
+    display: none;
+    animation: gameOverColorCycle 1.6s steps(1) infinite;
+  }
+
+  @keyframes gameOverColorCycle {
+    0%   { color: #00ff2f; }
+    20%  { color: #ff00e5; }
+    40%  { color: #ff0004; }
+    60%  { color: #0080ff; }
+    80%  { color: #e5ff00; }
+    100% { color: #00ff2f; }
+  }
+
+  /* --- Button --- */
+  .btn-wrap {
+    position: absolute;
+    left: 50%;
+    top: 60.6%;
+    transform: translateX(-50%);
+    width: 44.8%;
+    aspect-ratio: 184/73;
+    z-index: 3;
+  }
+
+  .btn-play {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--cyan);
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(15px, 4.9vw, 20px);
+    cursor: pointer;
+    background: var(--bg);
+    border: 2px solid var(--cyan);
+    box-sizing: border-box;
+    box-shadow: 4px 4px 0 var(--cyan);
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+  }
+
+  .btn-play:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 var(--cyan);
+  }
+
+  .btn-play:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 var(--cyan);
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    transition: opacity 0.15s ease;
+  }
+  .overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="frame" id="frame">
+  <canvas id="game"></canvas>
+
+  <div class="hud" id="hud" style="display:none">
+    <div class="label">SCORE</div>
+    <div class="value" id="scoreVal">0</div>
+  </div>
+
+  <div class="game-over-label" id="gameOverLabel">GAME OVER!</div>
+
+  <div class="overlay" id="overlay">
+    <div class="btn-wrap">
+      <div class="btn-play" id="playBtn">PLAY</div>
+    </div>
+  </div>
+
+  <div class="footer-note">No internet connection :(</div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const frame = document.getElementById('frame');
+  const overlay = document.getElementById('overlay');
+  const playBtn = document.getElementById('playBtn');
+  const hud = document.getElementById('hud');
+  const scoreEl = document.getElementById('scoreVal');
+  const gameOverLabel = document.getElementById('gameOverLabel');
+
+  let W, H, dpr;
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    const rect = frame.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const PINK = '#ff2e63';
+
+  const state = {
+    playing: false,
+    score: 0,
+    ball: { x: 0, y: 0, vx: 0, vy: 0, r: 0 },
+    paddle: { x: 0, w: 0, h: 0, targetX: 0 },
+    sparks: [],
+  };
+
+  function spawnSparks(x, y) {
+    const count = 6;
+    for (let i = 0; i < count; i++) {
+      const spread = (Math.PI) + (Math.random() - 0.5) * Math.PI * 0.9;
+      const speed = H * (0.35 + Math.random() * 0.35);
+      const life = 0.35 + Math.random() * 0.1;
+      state.sparks.push({
+        x, y,
+        vx: Math.cos(spread) * speed,
+        vy: Math.sin(spread) * speed * 0.6 - H * 0.15,
+        life: life,
+        maxLife: life,
+        size: H * (0.012 + Math.random() * 0.008),
+      });
+    }
+  }
+
+  function layoutFromFrame() {
+    state.ball.r = (34 / 402) * W / 2;
+    state.paddle.w = (130 / 402) * W;
+    state.paddle.h = (12 / 874) * H;
+  }
+
+  function resetBall() {
+    layoutFromFrame();
+    state.ball.x = W / 2;
+    state.ball.y = (131 / 874) * H + state.ball.r;
+    const angle = (Math.random() * 0.6 - 0.3);
+    const speed = H * 0.34;
+    state.ball.vx = Math.sin(angle) * speed;
+    state.ball.vy = Math.cos(angle) * speed;
+  }
+
+  function resetGame() {
+    layoutFromFrame();
+    state.score = 0;
+    state.paddle.x = W / 2;
+    state.paddle.targetX = W / 2;
+    resetBall();
+    scoreEl.textContent = '0';
+  }
+
+  resetGame();
+
+  function setPaddleFromClientX(clientX) {
+    const rect = frame.getBoundingClientRect();
+    const localX = clientX - rect.left;
+    const scaledX = localX * (W / rect.width);
+    state.paddle.targetX = Math.max(state.paddle.w / 2, Math.min(W - state.paddle.w / 2, scaledX));
+  }
+
+  canvas.addEventListener('pointerdown', (e) => setPaddleFromClientX(e.clientX));
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pressure > 0 || e.pointerType === 'touch') setPaddleFromClientX(e.clientX);
+  });
+  canvas.addEventListener('mousemove', (e) => setPaddleFromClientX(e.clientX));
+
+  function startGame() {
+    resetGame();
+    state.playing = true;
+    overlay.classList.add('hidden');
+    hud.style.display = 'flex';
+    gameOverLabel.style.display = 'none';
+  }
+
+  playBtn.addEventListener('click', startGame);
+
+  function gameOver() {
+    state.playing = false;
+    overlay.classList.remove('hidden');
+    gameOverLabel.style.display = 'block';
+    hud.style.display = 'flex';
+  }
+
+  function update(dt) {
+    state.paddle.x += (state.paddle.targetX - state.paddle.x) * Math.min(1, dt * 14);
+
+    const b = state.ball;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+
+    const paddleTopY = (728 / 874) * H;
+
+    if (b.x - b.r <= 0) {
+      b.x = b.r;
+      b.vx = Math.abs(b.vx);
+    } else if (b.x + b.r >= W) {
+      b.x = W - b.r;
+      b.vx = -Math.abs(b.vx);
+    }
+
+    if (b.y - b.r <= 0) {
+      b.y = b.r;
+      b.vy = Math.abs(b.vy);
+    }
+
+    const p = state.paddle;
+    if (
+      b.vy > 0 &&
+      b.y + b.r >= paddleTopY &&
+      b.y + b.r <= paddleTopY + p.h + b.r &&
+      b.x >= p.x - p.w / 2 - b.r &&
+      b.x <= p.x + p.w / 2 + b.r
+    ) {
+      b.y = paddleTopY - b.r;
+      const hitPos = (b.x - p.x) / (p.w / 2);
+      const speed = Math.min(H * 0.9, Math.hypot(b.vx, b.vy) * 1.07);
+      const maxAngle = Math.PI / 3.2;
+      const angle = hitPos * maxAngle;
+      b.vx = Math.sin(angle) * speed;
+      b.vy = -Math.abs(Math.cos(angle) * speed);
+
+      state.score += 1;
+      scoreEl.textContent = state.score;
+      spawnSparks(b.x, paddleTopY);
+    }
+
+    if (b.y - b.r > H) {
+      gameOver();
+    }
+
+    for (let i = state.sparks.length - 1; i >= 0; i--) {
+      const s = state.sparks[i];
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.vy += H * 0.9 * dt;
+      s.life -= dt;
+      if (s.life <= 0) state.sparks.splice(i, 1);
+    }
+  }
+
+  function drawSparks() {
+    for (const s of state.sparks) {
+      const t = Math.max(0, s.life / s.maxLife);
+      ctx.save();
+      ctx.globalAlpha = t;
+      ctx.translate(s.x, s.y);
+      ctx.rotate(t * 2);
+      const sz = s.size * (0.4 + t * 0.6);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(0, -sz);
+      ctx.lineTo(sz * 0.28, -sz * 0.28);
+      ctx.lineTo(sz, 0);
+      ctx.lineTo(sz * 0.28, sz * 0.28);
+      ctx.lineTo(0, sz);
+      ctx.lineTo(-sz * 0.28, sz * 0.28);
+      ctx.lineTo(-sz, 0);
+      ctx.lineTo(-sz * 0.28, -sz * 0.28);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBall() {
+    const b = state.ball;
+    ctx.fillStyle = PINK;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawPaddle() {
+    const p = state.paddle;
+    const y = (728 / 874) * H;
+    const x0 = p.x - p.w / 2;
+
+    ctx.fillStyle = PINK;
+    ctx.fillRect(x0, y, p.w, p.h);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawSparks();
+    drawBall();
+    drawPaddle();
+  }
+
+  let lastTime = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.033, (now - lastTime) / 1000);
+    lastTime = now;
+    if (state.playing) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
