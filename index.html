@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Tennis for Two</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
@@ -20,18 +21,22 @@
     margin: 0;
     padding: 0;
     height: 100%;
+    width: 100%;
     background: #000;
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: 'Press Start 2P', monospace;
     overflow: hidden;
+    position: fixed;
+    inset: 0;
   }
 
   .frame {
     position: relative;
-    width: min(94vw, 402px);
+    width: min(94vw, 402px, calc(96vh * 402 / 874));
     aspect-ratio: 402 / 874;
+    max-height: 96vh;
     background:
       linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / var(--grid) var(--grid),
       linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / var(--grid) var(--grid),
@@ -201,6 +206,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 100));
   resize();
 
   const PINK = '#ff2e63';
